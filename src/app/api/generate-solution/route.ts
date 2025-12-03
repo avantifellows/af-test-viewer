@@ -45,9 +45,7 @@ Remember that the questions are constructed very carefully, and do not contain a
 
 ---
 
-{{PREVIOUS_HINTS}}
-
-Provide the next hint that builds on any previous hints. Make it progressively more specific and detailed than before. Do NOT repeat information already given. Do NOT reveal the final answer.`;
+{{HINT_INSTRUCTIONS}}`;
 
 export async function GET() {
   return NextResponse.json({
@@ -84,16 +82,20 @@ export async function POST(request: NextRequest) {
     const defaultPrompt = type === "hint" ? DEFAULT_HINT_PROMPT : DEFAULT_SOLUTION_PROMPT;
     const promptTemplate = customPrompt || defaultPrompt;
 
-    // Build previous hints section
-    let previousHintsSection = "";
+    // Build hint instructions section (conditional based on previous hints)
+    let hintInstructions = "";
     if (previousHints && previousHints.length > 0) {
-      previousHintsSection = "Previously given hints:\n" +
-        previousHints.map((hint: string, idx: number) => `Hint ${idx + 1}: ${hint}`).join("\n");
+      hintInstructions = "Previously given hints:\n" +
+        previousHints.map((hint: string, idx: number) => `Hint ${idx + 1}: ${hint}`).join("\n") +
+        "\n\nProvide the next hint that builds on the previous hints above. Make it progressively more specific and detailed. Do NOT repeat information already given. Do NOT reveal the final answer.";
+    } else {
+      hintInstructions = "Provide a helpful hint to guide toward solving this problem. Do NOT reveal the final answer.";
     }
 
     const finalPrompt = promptTemplate
       .replace("{{QUESTION_CONTENT}}", questionContent)
-      .replace("{{PREVIOUS_HINTS}}", previousHintsSection);
+      .replace("{{HINT_INSTRUCTIONS}}", hintInstructions)
+      .replace("{{PREVIOUS_HINTS}}", hintInstructions); // Backward compatibility
 
     console.log("Type:", type, "Using custom prompt:", !!customPrompt, "Previous hints:", previousHints?.length || 0);
     console.log("Prompt preview:", finalPrompt.substring(0, 200));
