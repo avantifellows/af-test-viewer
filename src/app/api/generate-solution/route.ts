@@ -4,9 +4,61 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "google/gemini-2.0-flash-001";
 
+const DEFAULT_SOLUTION_PROMPT = `You are a very smart student, attempting the Joint Entrance Examination (JEE) Advanced of the Indian Institutes of Technology (IIT).
+
+Read the instructions below carefully, and then answer the question.
+
+IMPORTANT: Mathematical equations in the question are written in LaTeX notation (e.g., $x^2$ for inline math, $$E=mc^2$$ for display math). Parse and interpret them correctly.
+
+The question may reference a diagram. If there is a discrepancy between the text and any diagram description, you should use the information from the text.
+
+Remember that the questions are constructed very carefully, and do not contain any errors - so read the question carefully and answer the question as asked.
+
+---
+
+{{QUESTION_CONTENT}}
+
+---
+
+Answer the question above.
+
+Follow carefully any instructions given in the question.
+
+Ensure that your solution ends with the sentence of the form:
+'The correct answer is ...', where ... is your answer.
+
+If the question is a multiple choice question, your answer should be the letter corresponding to the correct answer.`;
+
+const DEFAULT_HINT_PROMPT = `You are a very smart student, attempting the Joint Entrance Examination (JEE) Advanced of the Indian Institutes of Technology (IIT).
+
+Read the instructions below carefully, provide one hint that would allow reattempting the question. DO NOT PROVIDE THE ANSWER.
+
+IMPORTANT: Mathematical equations in the question are written in LaTeX notation (e.g., $x^2$ for inline math, $$E=mc^2$$ for display math). Parse and interpret them correctly.
+
+The question may reference a diagram. If there is a discrepancy between the text and any diagram description, you should use the information from the text.
+
+Remember that the questions are constructed very carefully, and do not contain any errors - so read the question and follow instructions very carefully.
+
+---
+
+{{QUESTION_CONTENT}}
+
+---
+
+{{PREVIOUS_HINTS}}
+
+Provide the next hint that builds on any previous hints. Make it progressively more specific and detailed than before. Do NOT repeat information already given. Do NOT reveal the final answer.`;
+
+export async function GET() {
+  return NextResponse.json({
+    defaultSolutionPrompt: DEFAULT_SOLUTION_PROMPT,
+    defaultHintPrompt: DEFAULT_HINT_PROMPT,
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { questionText, passageText, options } = await request.json();
+    const { questionText, passageText, options, customPrompt, type, previousHints } = await request.json();
 
     if (!questionText) {
       return NextResponse.json({ error: "Question text is required" }, { status: 400 });
@@ -28,6 +80,24 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Use custom prompt or default based on type, replacing placeholder with question content
+    const defaultPrompt = type === "hint" ? DEFAULT_HINT_PROMPT : DEFAULT_SOLUTION_PROMPT;
+    const promptTemplate = customPrompt || defaultPrompt;
+
+    // Build previous hints section
+    let previousHintsSection = "";
+    if (previousHints && previousHints.length > 0) {
+      previousHintsSection = "Previously given hints:\n" +
+        previousHints.map((hint: string, idx: number) => `Hint ${idx + 1}: ${hint}`).join("\n");
+    }
+
+    const finalPrompt = promptTemplate
+      .replace("{{QUESTION_CONTENT}}", questionContent)
+      .replace("{{PREVIOUS_HINTS}}", previousHintsSection);
+
+    console.log("Type:", type, "Using custom prompt:", !!customPrompt, "Previous hints:", previousHints?.length || 0);
+    console.log("Prompt preview:", finalPrompt.substring(0, 200));
+
     const response = await fetch(OPENROUTER_API_URL, {
       method: "POST",
       headers: {
@@ -41,30 +111,7 @@ export async function POST(request: NextRequest) {
         messages: [
           {
             role: "user",
-            content: `You are a very smart student, attempting the Joint Entrance Examination (JEE) Advanced of the Indian Institutes of Technology (IIT).
-
-Read the instructions below carefully, and then answer the question.
-
-IMPORTANT: Mathematical equations in the question are written in LaTeX notation (e.g., $x^2$ for inline math, $$E=mc^2$$ for display math). Parse and interpret them correctly.
-
-The question may reference a diagram. If there is a discrepancy between the text and any diagram description, you should use the information from the text.
-
-Remember that the questions are constructed very carefully, and do not contain any errors - so read the question carefully and answer the question as asked.
-
----
-
-${questionContent}
-
----
-
-Answer the question above.
-
-Follow carefully any instructions given in the question.
-
-Ensure that your solution ends with the sentence of the form:
-'The correct answer is ...', where ... is your answer.
-
-If the question is a multiple choice question, your answer should be the letter corresponding to the correct answer.`,
+            content: finalPrompt,
           },
         ],
         max_tokens: 4000,

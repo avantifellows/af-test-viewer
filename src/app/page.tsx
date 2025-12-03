@@ -29,11 +29,16 @@ interface Test {
 }
 
 interface SolutionState {
-  loading: boolean;
+  hintLoading: boolean;
+  solutionLoading: boolean;
+  aiHints: string[];
   aiSolution?: string;
-  error?: string;
-  showSolutions: boolean;
+  hintError?: string;
+  solutionError?: string;
+  showPanel: boolean;
 }
+
+const DEFAULT_PROMPT_PLACEHOLDER = "Loading...";
 
 export default function Home() {
   const [testId, setTestId] = useState("");
@@ -42,6 +47,28 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [mathJaxReady, setMathJaxReady] = useState(false);
   const [solutions, setSolutions] = useState<Record<string, SolutionState>>({});
+  const [activeTab, setActiveTab] = useState<"viewer" | "prompt">("viewer");
+
+  // Hint prompts
+  const [defaultHintPrompt, setDefaultHintPrompt] = useState(DEFAULT_PROMPT_PLACEHOLDER);
+  const [customHintPrompt, setCustomHintPrompt] = useState("");
+
+  // Solution prompts
+  const [defaultSolutionPrompt, setDefaultSolutionPrompt] = useState(DEFAULT_PROMPT_PLACEHOLDER);
+  const [customSolutionPrompt, setCustomSolutionPrompt] = useState("");
+
+  // Fetch default prompts on mount
+  useEffect(() => {
+    fetch("/api/generate-solution")
+      .then((res) => res.json())
+      .then((data) => {
+        setDefaultHintPrompt(data.defaultHintPrompt);
+        setCustomHintPrompt(data.defaultHintPrompt);
+        setDefaultSolutionPrompt(data.defaultSolutionPrompt);
+        setCustomSolutionPrompt(data.defaultSolutionPrompt);
+      })
+      .catch(console.error);
+  }, []);
 
   // Re-typeset MathJax when test or solutions change
   useEffect(() => {
@@ -84,14 +111,22 @@ export default function Home() {
     return (section[key] as Problem[]) || [];
   };
 
-  const generateSolution = useCallback(async (problemKey: string, problem: Problem) => {
+  const generateHint = useCallback(async (problemKey: string, problem: Problem) => {
+    const currentState = solutions[problemKey];
+    const previousHints = currentState?.aiHints || [];
+
     setSolutions((prev) => ({
       ...prev,
-      [problemKey]: { loading: true, showSolutions: true },
+      [problemKey]: {
+        ...prev[problemKey],
+        hintLoading: true,
+        solutionLoading: prev[problemKey]?.solutionLoading || false,
+        aiHints: prev[problemKey]?.aiHints || [],
+        showPanel: true,
+      },
     }));
 
     try {
-      // Send text content to API
       const response = await fetch("/api/generate-solution", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -99,6 +134,61 @@ export default function Home() {
           questionText: problem.text,
           passageText: problem.passage_text,
           options: problem.options,
+          type: "hint",
+          previousHints: previousHints,
+          customPrompt: customHintPrompt !== defaultHintPrompt ? customHintPrompt : undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate hint");
+      }
+
+      setSolutions((prev) => ({
+        ...prev,
+        [problemKey]: {
+          ...prev[problemKey],
+          hintLoading: false,
+          aiHints: [...(prev[problemKey]?.aiHints || []), data.solution],
+        },
+      }));
+    } catch (err) {
+      console.error("Error generating hint:", err);
+      setSolutions((prev) => ({
+        ...prev,
+        [problemKey]: {
+          ...prev[problemKey],
+          hintLoading: false,
+          hintError: err instanceof Error ? err.message : "Failed to generate hint",
+        },
+      }));
+    }
+  }, [customHintPrompt, defaultHintPrompt, solutions]);
+
+  const generateSolution = useCallback(async (problemKey: string, problem: Problem) => {
+    setSolutions((prev) => ({
+      ...prev,
+      [problemKey]: {
+        ...prev[problemKey],
+        solutionLoading: true,
+        hintLoading: prev[problemKey]?.hintLoading || false,
+        aiHints: prev[problemKey]?.aiHints || [],
+        showPanel: true,
+      },
+    }));
+
+    try {
+      const response = await fetch("/api/generate-solution", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          questionText: problem.text,
+          passageText: problem.passage_text,
+          options: problem.options,
+          type: "solution",
+          customPrompt: customSolutionPrompt !== defaultSolutionPrompt ? customSolutionPrompt : undefined,
         }),
       });
 
@@ -111,9 +201,9 @@ export default function Home() {
       setSolutions((prev) => ({
         ...prev,
         [problemKey]: {
-          loading: false,
+          ...prev[problemKey],
+          solutionLoading: false,
           aiSolution: data.solution,
-          showSolutions: true,
         },
       }));
     } catch (err) {
@@ -121,13 +211,13 @@ export default function Home() {
       setSolutions((prev) => ({
         ...prev,
         [problemKey]: {
-          loading: false,
-          error: err instanceof Error ? err.message : "Failed to generate solution",
-          showSolutions: true,
+          ...prev[problemKey],
+          solutionLoading: false,
+          solutionError: err instanceof Error ? err.message : "Failed to generate solution",
         },
       }));
     }
-  }, []);
+  }, [customSolutionPrompt, defaultSolutionPrompt]);
 
   let questionNumber = 0;
 
@@ -177,9 +267,101 @@ export default function Home() {
 
       <div className="min-h-screen bg-gray-50 p-8">
         <main className="max-w-5xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900 mb-8">Test Viewer</h1>
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">Test Viewer</h1>
 
-          <div className="flex gap-4 mb-8">
+          {/* Tab Navigation */}
+          <div className="flex border-b border-gray-300 mb-6">
+            <button
+              onClick={() => setActiveTab("viewer")}
+              className={`px-6 py-3 font-medium transition-colors ${
+                activeTab === "viewer"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Test Viewer
+            </button>
+            <button
+              onClick={() => setActiveTab("prompt")}
+              className={`px-6 py-3 font-medium transition-colors ${
+                activeTab === "prompt"
+                  ? "text-blue-600 border-b-2 border-blue-600"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Prompt Manager
+              {(customHintPrompt !== defaultHintPrompt || customSolutionPrompt !== defaultSolutionPrompt) && (
+                <span className="ml-2 px-2 py-0.5 text-xs bg-yellow-100 text-yellow-800 rounded">
+                  Modified
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Prompt Manager Tab */}
+          {activeTab === "prompt" && (
+            <div className="space-y-6">
+              <p className="text-sm text-gray-600">
+                Use <code className="bg-gray-100 px-1 rounded">{"{{QUESTION_CONTENT}}"}</code> as
+                a placeholder where the question text, passage, and options will be inserted.
+              </p>
+
+              {/* Hint Prompt */}
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold text-yellow-700">
+                    Hint Prompt
+                  </h2>
+                  <button
+                    onClick={() => setCustomHintPrompt(defaultHintPrompt)}
+                    disabled={customHintPrompt === defaultHintPrompt}
+                    className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Reset to Default
+                  </button>
+                </div>
+                <textarea
+                  value={customHintPrompt}
+                  onChange={(e) => setCustomHintPrompt(e.target.value)}
+                  className="w-full h-64 p-4 border border-yellow-300 rounded-lg font-mono text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  placeholder="Enter your hint prompt..."
+                />
+                {customHintPrompt !== defaultHintPrompt && (
+                  <p className="mt-2 text-sm text-yellow-600">Modified from default</p>
+                )}
+              </div>
+
+              {/* Solution Prompt */}
+              <div className="bg-white rounded-lg shadow-md p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold text-green-700">
+                    Solution Prompt
+                  </h2>
+                  <button
+                    onClick={() => setCustomSolutionPrompt(defaultSolutionPrompt)}
+                    disabled={customSolutionPrompt === defaultSolutionPrompt}
+                    className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Reset to Default
+                  </button>
+                </div>
+                <textarea
+                  value={customSolutionPrompt}
+                  onChange={(e) => setCustomSolutionPrompt(e.target.value)}
+                  className="w-full h-64 p-4 border border-green-300 rounded-lg font-mono text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="Enter your solution prompt..."
+                />
+                {customSolutionPrompt !== defaultSolutionPrompt && (
+                  <p className="mt-2 text-sm text-green-600">Modified from default</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Test Viewer Tab */}
+          {activeTab === "viewer" && (
+            <>
+              <div className="flex gap-4 mb-8">
             <input
               type="text"
               value={testId}
@@ -282,70 +464,126 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* Generate Solution Button */}
-                        <div className="mt-4">
+                        {/* Generate Buttons */}
+                        <div className="mt-4 flex gap-2">
+                          <button
+                            onClick={() => generateHint(problemKey, problem)}
+                            disabled={solutionState?.hintLoading}
+                            className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:bg-yellow-300 transition-colors text-sm"
+                          >
+                            {solutionState?.hintLoading
+                              ? "Generating..."
+                              : solutionState?.aiHints?.length
+                              ? `Generate Next Hint (${solutionState.aiHints.length})`
+                              : "Generate Hint"}
+                          </button>
                           <button
                             onClick={() => generateSolution(problemKey, problem)}
-                            disabled={solutionState?.loading}
+                            disabled={solutionState?.solutionLoading}
                             className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-green-300 transition-colors text-sm"
                           >
-                            {solutionState?.loading
+                            {solutionState?.solutionLoading
                               ? "Generating..."
                               : "Generate Solution"}
                           </button>
                         </div>
 
                         {/* Solutions Display */}
-                        {solutionState?.showSolutions && (
-                          <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                            {/* CMS Solution */}
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                              <h4 className="font-semibold text-blue-800 mb-2">
-                                CMS Solution
+                        {solutionState?.showPanel && (
+                          <div className="mt-4 space-y-4">
+                            {/* AI Hints */}
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                              <h4 className="font-semibold text-yellow-800 mb-2">
+                                AI Hints {solutionState.aiHints?.length > 0 && `(${solutionState.aiHints.length})`}
                               </h4>
-                              {problem.solution ? (
-                                <div
-                                  className="text-gray-800 text-sm"
-                                  dangerouslySetInnerHTML={{
-                                    __html: problem.solution,
-                                  }}
-                                />
+                              {solutionState.hintError ? (
+                                <p className="text-red-600 text-sm">
+                                  {solutionState.hintError}
+                                </p>
+                              ) : solutionState.aiHints?.length > 0 ? (
+                                <div className="space-y-3">
+                                  {solutionState.aiHints.map((hint, idx) => (
+                                    <div key={idx} className="border-l-2 border-yellow-400 pl-3">
+                                      <span className="font-medium text-yellow-700 text-sm">
+                                        Hint {idx + 1}:
+                                      </span>
+                                      <div
+                                        className="text-gray-800 text-sm whitespace-pre-wrap mt-1"
+                                        dangerouslySetInnerHTML={{
+                                          __html: hint.replace(/\n/g, "<br>"),
+                                        }}
+                                      />
+                                    </div>
+                                  ))}
+                                  {solutionState.hintLoading && (
+                                    <div className="flex items-center gap-2 text-gray-500 border-l-2 border-yellow-400 pl-3">
+                                      <div className="animate-spin h-4 w-4 border-2 border-yellow-600 border-t-transparent rounded-full"></div>
+                                      <span className="text-sm">Generating next hint...</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : solutionState.hintLoading ? (
+                                <div className="flex items-center gap-2 text-gray-500">
+                                  <div className="animate-spin h-4 w-4 border-2 border-yellow-600 border-t-transparent rounded-full"></div>
+                                  <span className="text-sm">Generating hint...</span>
+                                </div>
                               ) : (
                                 <p className="text-gray-500 italic text-sm">
-                                  No solution available
+                                  Click &quot;Generate Hint&quot; to get progressive hints
                                 </p>
                               )}
                             </div>
 
-                            {/* AI Solution */}
-                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                              <h4 className="font-semibold text-green-800 mb-2">
-                                AI Solution (Gemini)
-                              </h4>
-                              {solutionState.loading ? (
-                                <div className="flex items-center gap-2 text-gray-500">
-                                  <div className="animate-spin h-4 w-4 border-2 border-green-600 border-t-transparent rounded-full"></div>
-                                  <span className="text-sm">Generating solution...</span>
-                                </div>
-                              ) : solutionState.error ? (
-                                <p className="text-red-600 text-sm">
-                                  {solutionState.error}
-                                </p>
-                              ) : solutionState.aiSolution ? (
-                                <div
-                                  className="text-gray-800 text-sm whitespace-pre-wrap"
-                                  dangerouslySetInnerHTML={{
-                                    __html: solutionState.aiSolution.replace(
-                                      /\n/g,
-                                      "<br>"
-                                    ),
-                                  }}
-                                />
-                              ) : (
-                                <p className="text-gray-500 italic text-sm">
-                                  Click &quot;Generate Solution&quot; to get AI solution
-                                </p>
-                              )}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                              {/* CMS Solution */}
+                              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <h4 className="font-semibold text-blue-800 mb-2">
+                                  CMS Solution
+                                </h4>
+                                {problem.solution ? (
+                                  <div
+                                    className="text-gray-800 text-sm"
+                                    dangerouslySetInnerHTML={{
+                                      __html: problem.solution,
+                                    }}
+                                  />
+                                ) : (
+                                  <p className="text-gray-500 italic text-sm">
+                                    No solution available
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* AI Solution */}
+                              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                <h4 className="font-semibold text-green-800 mb-2">
+                                  AI Solution (Gemini)
+                                </h4>
+                                {solutionState.solutionLoading ? (
+                                  <div className="flex items-center gap-2 text-gray-500">
+                                    <div className="animate-spin h-4 w-4 border-2 border-green-600 border-t-transparent rounded-full"></div>
+                                    <span className="text-sm">Generating solution...</span>
+                                  </div>
+                                ) : solutionState.solutionError ? (
+                                  <p className="text-red-600 text-sm">
+                                    {solutionState.solutionError}
+                                  </p>
+                                ) : solutionState.aiSolution ? (
+                                  <div
+                                    className="text-gray-800 text-sm whitespace-pre-wrap"
+                                    dangerouslySetInnerHTML={{
+                                      __html: solutionState.aiSolution.replace(
+                                        /\n/g,
+                                        "<br>"
+                                      ),
+                                    }}
+                                  />
+                                ) : (
+                                  <p className="text-gray-500 italic text-sm">
+                                    Click &quot;Generate Solution&quot; to get AI solution
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           </div>
                         )}
@@ -366,6 +604,8 @@ export default function Home() {
                 Back to Test List
               </button>
             </div>
+          )}
+            </>
           )}
         </main>
       </div>
