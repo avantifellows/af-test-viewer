@@ -84,13 +84,13 @@ export default function Home() {
       .catch(console.error);
   }, []);
 
-  // Re-typeset MathJax when test, solutions, questionStates, or activeTab change
+  // Re-typeset MathJax when relevant state changes
   // useLayoutEffect ensures DOM is fully updated before MathJax processes
   useLayoutEffect(() => {
     if (mathJaxReady && window.MathJax) {
       window.MathJax.typesetPromise?.();
     }
-  }, [test, solutions, questionStates, activeTab, mathJaxReady]);
+  }, [test, solutions, questionStates, activeTab, testSubmitted, mathJaxReady]);
 
   const fetchTest = async (id?: string) => {
     const targetId = id || testId;
