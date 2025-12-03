@@ -31,9 +31,9 @@ If the question is a multiple choice question, your answer should be the letter 
 
 const DEFAULT_HINT_PROMPT = `You are a very smart student, attempting the Joint Entrance Examination (JEE) Advanced of the Indian Institutes of Technology (IIT).
 
-Read the instructions below carefully, provide one hint that would allow reattempting the question. DO NOT PROVIDE THE ANSWER.
+Read the instructions below carefully, provide one hint that would allow reattempting the question. DO NOT PROVIDE THE ANSWER. The goal of the hint is to tell the student specific and sharp problem solving steps - focus on these and not on explaining theory. After each hint show one step of the solution.
 
-IMPORTANT: Mathematical equations in the question are written in LaTeX notation (e.g., $x^2$ for inline math, $$E=mc^2$$ for display math). Parse and interpret them correctly.
+IMPORTANT: Mathematical equations in the question are written in LaTeX notation (e.g., $x^2$ for inline math, $E=mc^2$ for display math). Parse and interpret them correctly.
 
 The question may reference a diagram. If there is a discrepancy between the text and any diagram description, you should use the information from the text.
 

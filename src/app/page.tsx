@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback } from "react";
 import Script from "next/script";
+import ReactMarkdown from "react-markdown";
 
 
 interface Option {
@@ -84,7 +85,8 @@ export default function Home() {
   }, []);
 
   // Re-typeset MathJax when test, solutions, questionStates, or activeTab change
-  useEffect(() => {
+  // useLayoutEffect ensures DOM is fully updated before MathJax processes
+  useLayoutEffect(() => {
     if (mathJaxReady && window.MathJax) {
       window.MathJax.typesetPromise?.();
     }
@@ -498,23 +500,33 @@ export default function Home() {
                 <span className="text-gray-700">Total Marks: {test.marks}</span>
               </div>
 
-              {/* Score Display */}
-              <div className={`p-4 rounded-lg mb-6 ${testSubmitted ? 'bg-blue-100 border-2 border-blue-500' : 'bg-gray-100 border border-gray-300'}`}>
-                <div className="flex justify-between items-center">
-                  <div className="flex gap-6">
-                    <div>
-                      <span className="text-gray-600 text-sm">Score:</span>
-                      <span className="ml-2 text-2xl font-bold text-blue-600">{calculateTotalScore()}</span>
+              {/* Sticky Score Display */}
+              <div className={`sticky top-0 z-50 -mx-8 px-8 py-4 mb-6 shadow-md backdrop-blur-sm ${
+                testSubmitted
+                  ? 'bg-gradient-to-r from-green-500/95 to-emerald-600/95'
+                  : 'bg-gradient-to-r from-blue-600/95 to-indigo-700/95'
+              }`}>
+                <div className="flex justify-between items-center max-w-5xl mx-auto">
+                  <div className="flex items-center gap-8">
+                    <div className="text-center">
+                      <div className="text-white/70 text-xs uppercase tracking-wider font-medium">Score</div>
+                      <div className="text-3xl font-bold text-white">{calculateTotalScore()}</div>
                     </div>
-                    <div>
-                      <span className="text-gray-600 text-sm">Answered:</span>
-                      <span className="ml-2 text-lg font-semibold text-gray-800">{countAnsweredQuestions()}</span>
+                    <div className="h-10 w-px bg-white/30"></div>
+                    <div className="text-center">
+                      <div className="text-white/70 text-xs uppercase tracking-wider font-medium">Answered</div>
+                      <div className="text-2xl font-semibold text-white">{countAnsweredQuestions()}</div>
                     </div>
                   </div>
-                  {testSubmitted && (
-                    <span className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold">
-                      Test Submitted
-                    </span>
+                  {testSubmitted ? (
+                    <div className="flex items-center gap-2 px-4 py-2 bg-white/20 rounded-full">
+                      <span className="text-white text-lg">✓</span>
+                      <span className="text-white font-semibold">Test Completed</span>
+                    </div>
+                  ) : (
+                    <div className="text-white/80 text-sm">
+                      Answer questions and submit when ready
+                    </div>
                   )}
                 </div>
               </div>
@@ -701,12 +713,9 @@ export default function Home() {
                                     <span className="font-medium text-yellow-700 text-sm">
                                       Hint {idx + 1}:
                                     </span>
-                                    <div
-                                      className="text-gray-800 text-sm whitespace-pre-wrap mt-1"
-                                      dangerouslySetInnerHTML={{
-                                        __html: hint.replace(/\n/g, "<br>"),
-                                      }}
-                                    />
+                                    <div className="text-gray-800 text-sm mt-1 prose prose-sm max-w-none prose-p:my-1 prose-strong:text-gray-900">
+                                      <ReactMarkdown>{hint}</ReactMarkdown>
+                                    </div>
                                   </div>
                                 ))}
                                 {solutionState.hintLoading && (
@@ -762,15 +771,9 @@ export default function Home() {
                                   {solutionState.solutionError}
                                 </p>
                               ) : solutionState?.aiSolution ? (
-                                <div
-                                  className="text-gray-800 text-sm whitespace-pre-wrap"
-                                  dangerouslySetInnerHTML={{
-                                    __html: solutionState.aiSolution.replace(
-                                      /\n/g,
-                                      "<br>"
-                                    ),
-                                  }}
-                                />
+                                <div className="text-gray-800 text-sm prose prose-sm max-w-none prose-p:my-1 prose-strong:text-gray-900">
+                                  <ReactMarkdown>{solutionState.aiSolution}</ReactMarkdown>
+                                </div>
                               ) : (
                                 <p className="text-gray-500 italic text-sm">
                                   Click &quot;Generate AI Solution&quot; to get AI solution
